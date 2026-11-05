@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Simulación: Agujero Negro relativista (geodésicas, disco de acreción, lente y vista 3D)</title>
+<style>
+  :root{--bg:#05050a;--panel:#0d0d18dd;--accent:#8b5cf6;--accent2:#ec4899;--text:#e5e5f0;--muted:#8888a0;--line:#2a2a40;}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden;
+    padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);}
+  canvas{display:block;width:100%;height:100%;background:radial-gradient(ellipse at center,#0a0a18 0%,#020204 80%);cursor:crosshair}
+  #panel{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:12px;background:var(--panel);backdrop-filter:blur(8px);
+    border:1px solid var(--line);border-radius:14px;padding:14px 16px;width:290px;max-width:84vw;max-height:92vh;overflow-y:auto;box-shadow:0 8px 30px rgba(0,0,0,.5);}
+  h1{font-size:15px;margin:0 0 10px;font-weight:600;background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent;}
+  label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px;}
+  input[type=range]{width:100%;accent-color:var(--accent);}
+  .row{margin-bottom:12px;}
+  .val{font-size:12px;color:var(--text);float:right;}
+  .formula{font-size:11px;color:var(--muted);background:#00000066;border-radius:8px;padding:8px 10px;margin-top:4px;line-height:1.5;}
+  select{width:100%;padding:6px 8px;border-radius:8px;background:#12121f;color:var(--text);border:1px solid var(--line);font-size:12px;}
+  button{width:100%;padding:9px;border:none;border-radius:10px;cursor:pointer;background:linear-gradient(90deg,var(--accent),var(--accent2));color:#fff;font-weight:600;font-size:13px;margin-top:4px;}
+  button.sec{background:#1b1b2e;border:1px solid var(--line);font-weight:500;font-size:12px;}
+  .two{display:flex;gap:6px}
+  .chk{font-size:12px;color:var(--text);display:flex;gap:6px;align-items:center;margin-top:8px}
+  #stat{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));right:12px;font-size:11px;line-height:1.55;color:var(--muted);background:var(--panel);
+    border:1px solid var(--line);border-radius:10px;padding:8px 12px;max-width:min(300px,60vw);}
+  #stat b{color:var(--text);font-weight:600}
+  #info{position:fixed;bottom:calc(10px + env(safe-area-inset-bottom,0px));left:12px;font-size:11px;color:var(--muted);max-width:min(420px,60vw);text-shadow:0 0 6px #000}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="panel">
+  <h1>⚫ Agujero Negro relativista</h1>
+  <div class="row">
+    <label>Masa (M) <span class="val" id="massVal"></span></label>
+    <input type="range" id="mass" min="0.48" max="10" step="0.01" value="1.95">
+    <div class="formula">R<sub>s</sub> = 2GM / c² ≈ 2,953 km × (M/M☉)<br>R<sub>s</sub> = <b id="rsVal"></b><br><span id="rsCmp"></span></div>
+    <select id="preset" style="margin-top:6px"><option value="">Presets de masa…</option><option value="5">Estelar · 5 M☉</option><option value="400">400 M☉</option><option value="23675">Horizonte = radio de Júpiter · 2,4×10⁴ M☉</option><option value="4.3e6">Sgr A* · 4,3×10⁶ M☉</option><option value="6.5e9">M87* · 6,5×10⁹ M☉</option></select>
+  </div>
+  <div class="row">
+    <label>Tipo de objeto <span class="val" id="sizeVal"></span></label>
+    <select id="objType">
+      <option value="humano">🧍 Humano (1,7 m)</option>
+      <option value="vehiculo">🚗 Vehículo (4,5 m)</option>
+      <option value="asteroide">☄️ Asteroide (10 km)</option>
+      <option value="mercurio">🪨 Mercurio (4 879 km)</option>
+      <option value="tierra">🌍 Tierra (12 742 km)</option>
+      <option value="jupiter">🟠 Júpiter (139 820 km)</option>
+    </select>
+    <button id="spawn">✨ Generar (posición aleatoria)</button>
+  </div>
+  <div class="row">
+    <label>Zoom <span class="val" id="zoomVal"></span></label>
+    <input type="range" id="zoom" min="-3" max="13" step="0.02" value="3">
+    <div class="two"><button class="sec" id="fit">Ajustar al agujero negro</button><button class="sec" id="clear">Limpiar</button></div>
+    <label class="chk"><input type="checkbox" id="follow"> Seguir al último objeto</label>
+    <label class="chk"><input type="checkbox" id="showHor" checked> Mostrar horizonte de sucesos</label>
+    <label class="chk"><input type="checkbox" id="dil" checked> Cámara lenta automática cerca del horizonte</label>
+  </div>
+  <div class="row" style="margin-bottom:0">
+    <label>Velocidad del tiempo <span class="val" id="timeVal"></span></label>
+    <input type="range" id="timeScale" min="-3" max="6.5" step="0.02" value="-0.5">
+  </div>
+  <div class="row" style="margin:14px 0 0;border-top:1px solid var(--line);padding-top:10px">
+    <label style="color:var(--text);font-weight:600">Relatividad (versión ampliada)</label>
+    <label class="chk"><input type="checkbox" id="rings" checked> Fotosfera, sombra e ISCO</label>
+    <label class="chk"><input type="checkbox" id="disk" checked> Disco de acreción</label>
+    <label class="chk"><input type="checkbox" id="lens" checked> Lente gravitacional (estrellas)</label>
+    <label style="margin-top:8px">Inclinación de la vista (3D) <span class="val" id="incVal"></span></label>
+    <input type="range" id="inc" min="0" max="75" step="1" value="0">
+  </div>
+</div>
+<div id="stat"></div>
+<div id="info">Versión ampliada. Clic = generar objeto. Objetos rígidos: geodésicas exactas de Schwarzschild (precesión, ISCO a 3 R_s, plongeo si L &lt; L_ISCO). Planetas: potencial pseudo-relativista de Paczyński–Wiita. La inclinación muestra el plano orbital en perspectiva 3D (las órbitas de Schwarzschild son planas).</div>
+
+<script>
+const C=299792458, GN=6.674e-11, MSUN=1.989e30, RS_PER_MSUN=2*GN*MSUN/(C*C); // ≈ 2953 m
+const $=id=>document.getElementById(id);
+const cv=$('c'), ctx=cv.getContext('2d');
+function resize(){cv.width=innerWidth;cv.height=innerHeight}
+resize(); addEventListener('resize',resize);
+
+// s: unidad de dibujo (m), len: extensión real (m), a: aceleración de marea de referencia (m/s²)
+const TYPES={
+  humano:   {name:'Humano',   s:0.68,   len:1.7,     a:100},
+  vehiculo: {name:'Vehículo', s:2.05,   len:4.5,     a:200},
+  asteroide:{name:'Asteroide',s:5000,   len:10000,   a:1},
+  mercurio: {name:'Mercurio', s:2.4395e6,len:4.879e6,a:3.7,m:3.301e23},
+  tierra:   {name:'Tierra',   s:6.371e6,len:1.2742e7,a:9.8,m:5.972e24},
+  jupiter:  {name:'Júpiter',  s:6.9911e7,len:1.3982e8,a:24.8,m:1.898e27}
+};
+let objects=[], mpp=1, autoFit=true, follow=false, timeScale=0.3, cam={x:0,y:0};
+let geo=true,showRings=true,showDisk=true,showLens=true,einR=4,incl=0,cinc=1;
+const PX=x=>cv.width/2+(x-cam.x)/mpp;            // proyección: x de la escena → pantalla
+const PY=y=>cv.height/2+(y-cam.y)*cinc/mpp;      // y se acorta por cos(inclinación)
+
+const FCUT=1e-9; // solo f=0 (r ≤ R_s) detiene el cálculo; el objeto nunca llega a cruzar el horizonte
+const fOf=(r,b)=>dil?Math.sqrt(Math.max(0,1-b.Rs/r)):1; // ritmo del reloj propio: dτ/dt = √(1 − R_s/r)
+function fmt(m){
+  if(m<1) return (m*100).toFixed(1)+' cm';
+  if(m<1000) return m.toFixed(m<10?2:0)+' m';
+  const k=m/1000;
+  return (k<10?k.toFixed(2):k<1e5?k.toFixed(0):k.toExponential(2))+' km';
+}
+const fnum=v=>v<1000?v.toFixed(1):v.toExponential(1);
+function BH(){const M=Math.pow(10,+$('mass').value);return{M,Rs:M*RS_PER_MSUN,GM:GN*M*MSUN}}
+
+function setMpp(l){l=Math.min(13,Math.max(-3,l));mpp=Math.pow(10,l);$('zoom').value=l;$('zoomVal').textContent='1 px = '+fmt(mpp)}
+function fit(){autoFit=true;setMpp(Math.log10(BH().Rs/70))}
+const fmtM=M=>M<10?M.toFixed(1):M<1e4?M.toFixed(0):M.toExponential(1).replace('e+','×10^');
+function updateHUD(){const b=BH(),q=b.Rs/6.9911e7;
+  $('massVal').textContent=fmtM(b.M)+' M☉';$('rsVal').textContent=fmt(b.Rs);
+  $('rsCmp').textContent='≈ '+(q<10?q.toPrecision(2):q.toExponential(1))+' × el radio de Júpiter'}
+$('preset').addEventListener('change',e=>{if(!e.target.value)return;
+  $('mass').value=Math.log10(+e.target.value);updateHUD();fit();e.target.value=''})
+function updateType(){const T=TYPES[$('objType').value];$('sizeVal').textContent=fmt(T.len)+(T.m?' · '+(T.m/MSUN).toExponential(1)+' M☉':'')}
+function updateTime(){const v=+$('timeScale').value;timeScale=Math.pow(10,v);$('timeVal').textContent='×'+timeScale.toPrecision(2)+' tiempo real'}
+$('mass').addEventListener('input',updateHUD);
+$('zoom').addEventListener('input',e=>{autoFit=false;setMpp(+e.target.value)});
+$('timeScale').addEventListener('input',updateTime);
+$('objType').addEventListener('change',updateType);
+$('fit').addEventListener('click',fit);
+$('clear').addEventListener('click',()=>{objects=[]});
+$('follow').addEventListener('change',e=>{follow=e.target.checked});
+let dil=true;$('dil').addEventListener('change',e=>{dil=e.target.checked});
+let showHor=true;$('showHor').addEventListener('change',e=>{showHor=e.target.checked});
+$('rings').addEventListener('change',e=>{showRings=e.target.checked});
+$('disk').addEventListener('change',e=>{showDisk=e.target.checked});
+$('lens').addEventListener('change',e=>{showLens=e.target.checked});
+const upInc=()=>{incl=+$('inc').value;cinc=Math.cos(incl*Math.PI/180);$('incVal').textContent=incl+'°'+(incl===0?' (desde arriba)':'')};
+$('inc').addEventListener('input',upInc);upInc();
+updateHUD();updateType();updateTime();fit();
+
+function makePlanet(T,x,y,vx,vy,type){
+  const N=240,R=T.s,w0=Math.sqrt(GN*T.m/(R*R*R)),parts=[];
+  for(let i=0;i<N;i++){
+    const rho=R*Math.sqrt((i+0.5)/N),th=i*2.399963,dx=rho*Math.cos(th),dy=rho*Math.sin(th);
+    const u=dx/R,w=dy/R,j=Math.random();let col;
+    if(type==='tierra'){const n=Math.sin(u*4.2+1)*Math.cos(w*3.7)+0.3*Math.sin((u+w)*7);col=n>0.25?`hsl(110,45%,${30+j*14}%)`:`hsl(210,70%,${38+j*14}%)`}
+    else if(type==='jupiter'){const bi=Math.min(6,Math.floor((w+1)/2*7)),bl=[68,58,76,50,80,55,72][bi];
+      col=((u-0.25)**2+((w-0.05)*2)**2<0.05)?`hsl(12,55%,${42+j*8}%)`:`hsl(30,45%,${bl+j*6}%)`}
+    else col=`hsl(35,6%,${42+j*22}%)`;
+    parts.push({x:x+dx,y:y+dy,vx:vx-w0*dy,vy:vy+w0*dx,col});
+  }
+  return parts;
+}
+function spawnAt(x,y){
+  const b=BH(),type=$('objType').value,T=TYPES[type];
+  let r=Math.hypot(x,y);
+  if(r<1e-6){x=1;y=0;r=1}
+  const rmin=T.m?Math.max(1.5*b.Rs,b.Rs+1.3*T.s):1.5*b.Rs;
+  if(r<rmin){const k=rmin/r;x*=k;y*=k;r=rmin}
+  const tan=Math.atan2(y,x)+Math.PI/2, v=Math.sqrt(b.GM/r)*(0.8+Math.random()*0.1);
+  const vx=Math.cos(tan)*v,vy=Math.sin(tan)*v;
+  if(T.m){
+    if(objects.length===0){ // los planetas orbitan en horas: ajustar el tiempo para que una órbita dure ~5 s
+      const P=2*Math.PI*Math.sqrt(r*r*r/b.GM);
+      $('timeScale').value=Math.min(6.5,Math.max(-3,Math.log10(P/5)));updateTime();
+    }
+    const parts=makePlanet(T,x,y,vx,vy,type);
+    objects.push({planet:true,type,parts,N0:parts.length,rp:T.s/Math.sqrt(parts.length),tauS:Math.sqrt(T.s**3/(GN*T.m)),
+      cx:x,cy:y,r,tidal:0,span:T.len,stretch:1,eaten:0,lost:0,rmax:r*30,f:1});
+  }else{
+    const o={x,y,vx,vy,type,stretch:1,hue:190+Math.random()*100,trail:[],r,tidal:0,cx:x,cy:y,f:1};
+    if(geo){ // geodésica de Schwarzschild: parte en reposo radial (apocentro) con 80–90 % del L de la órbita circular
+      const L0=Math.sqrt(b.GM*r*r/Math.max(r-1.5*b.Rs,0.05*b.Rs))*(0.8+Math.random()*0.1);
+      o.g={r,phi:Math.atan2(y,x),rd:0,L:L0,E:1};
+    }
+    objects.push(o);
+  }
+}
+$('spawn').addEventListener('click',()=>{
+  const b=BH(),T=TYPES[$('objType').value],a=Math.random()*Math.PI*2;
+  const r=T.m?Math.max(2.44*Math.cbrt(b.M*MSUN/T.m)*T.s*(1.5+Math.random()*0.7),6*b.Rs):b.Rs*(8+Math.random()*6);
+  if(T.m&&objects.length===0){autoFit=false;setMpp(Math.log10(r/(0.33*Math.min(cv.width,cv.height))))}
+  spawnAt(Math.cos(a)*r,Math.sin(a)*r);
+});
+cv.addEventListener('click',e=>{
+  const rc=cv.getBoundingClientRect();
+  const px=(e.clientX-rc.left)*cv.width/rc.width, py=(e.clientY-rc.top)*cv.height/rc.height;
+  spawnAt(cam.x+(px-cv.width/2)*mpp, cam.y+(py-cv.height/2)*mpp/cinc);
+});
+
+// planeta = 300 partículas con autogravedad (esfera uniforme, masa real) + gravedad del agujero negro:
+// las fuerzas de marea y el desgarro emergen solos. Cada partícula usa su propio paso adaptativo.
+// potencial pseudo-relativista de Paczyński–Wiita: a = GM/(r−R_s)² (reproduce el ISCO en 3 R_s)
+const pw=(r,b)=>{const q=Math.max(r-b.Rs,0.02*b.Rs);return b.GM/(q*q*r)};
+function stepPlanet(o,dtSim,b){
+  const T=TYPES[o.type],R=T.s,P=o.parts;
+  const nm=Math.min(60,Math.max(1,Math.ceil(dtSim/(0.04*o.tauS)))),H=dtSim/nm;
+  for(let m=0;m<nm&&P.length;m++){
+    let cx=0,cy=0,vx=0,vy=0;
+    for(const p of P){cx+=p.x;cy+=p.y;vx+=p.vx;vy+=p.vy}
+    const N=P.length;cx/=N;cy/=N;vx/=N;vy/=N;
+    const rc=Math.hypot(cx,cy),kd=0.03*Math.hypot(vx,vy)/rc,adx=-kd*vx,ady=-kd*vy; // arrastre de acreción sobre el cuerpo entero
+    const gc=pw(rc,b),acx=-gc*cx+adx,acy=-gc*cy+ady; // aceleración del centro de masa
+    const Gm=GN*T.m*N/o.N0,w0=1/o.tauS;
+    for(let i=N-1;i>=0;i--){
+      const p=P[i];
+      let t=0,it=0,dead=false;
+      while(t<H){
+        let r=Math.hypot(p.x,p.y);
+        const f=fOf(r,b); if(f<FCUT){dead=true;o.eaten++;break}
+        const h=Math.min((H-t)*f,0.02*Math.sqrt(Math.pow(Math.max(r-b.Rs,0.02*b.Rs),3)/b.GM)); // paso de tiempo propio de esta partícula
+        let a=pw(r,b);
+        // autogravedad respecto al centro de masa extrapolado a este instante (integración de 2.º orden)
+        let mx=cx+vx*t+0.5*acx*t*t,my=cy+vy*t+0.5*acy*t*t,dx=p.x-mx,dy=p.y-my,dd=Math.hypot(dx,dy),d=Math.max(R,dd),k=Gm/(d*d*d);
+        // arrastre de acreción sobre la velocidad propia de la partícula (sin contar el giro interno del planeta)
+        let sp=dd<=2*R?w0:0,kk=0.03*Math.hypot(p.vx,p.vy)/r;
+        p.vx+=(-a*p.x-k*dx-kk*(p.vx+sp*dy))*h/2;p.vy+=(-a*p.y-k*dy-kk*(p.vy-sp*dx))*h/2;
+        const vr=(p.vx*p.x+p.vy*p.y)/r,kr=(1-f)*vr/r; // dr/dt = f²·dr/dτ visto desde lejos
+        p.x+=(p.vx-kr*p.x)*h;p.y+=(p.vy-kr*p.y)*h;
+        r=Math.hypot(p.x,p.y);a=pw(r,b);
+        const t2=t+h/f;
+        mx=cx+vx*t2+0.5*acx*t2*t2;my=cy+vy*t2+0.5*acy*t2*t2;dx=p.x-mx;dy=p.y-my;dd=Math.hypot(dx,dy);d=Math.max(R,dd);k=Gm/(d*d*d);
+        sp=dd<=2*R?w0:0;kk=0.03*Math.hypot(p.vx,p.vy)/r;
+        p.vx+=(-a*p.x-k*dx-kk*(p.vx+sp*dy))*h/2;p.vy+=(-a*p.y-k*dy-kk*(p.vy-sp*dx))*h/2;
+        t=t2;
+        if(r<=b.Rs){dead=true;o.eaten++;break}
+        if(++it>1500){if(r<8*b.Rs){dead=true;o.eaten++}break}
+      }
+      if(!dead&&Math.hypot(p.x,p.y)>o.rmax){dead=true;o.lost++}
+      if(dead)P.splice(i,1);
+    }
+  }
+}
+
+// integración leapfrog con pasos adaptativos + arrastre de acreción (invariante de escala)
+// Geodésica radial-ecuatorial de Schwarzschild integrada con RK4 en el tiempo propio τ:
+//   d²r/dτ² = −GM/r² + L²/r³ − (3GM/c²)·L²/r⁴ ,  dφ/dτ = L/r² ,  dt/dτ = E/(1 − R_s/r)
+// Con dilatación activada se avanza en el tiempo t del observador lejano (el objeto nunca cruza el horizonte).
+function geodesic(o,dtSim,b){
+  const g=o.g,GM=b.GM,Rs=b.Rs,c2=C*C;
+  const acc=(r,L)=>-GM/(r*r)+L*L/(r*r*r)-1.5*Rs*L*L/(r*r*r*r);
+  let tAcc=0,it=0;
+  while(tAcc<dtSim){
+    const r=g.r,x=1-Rs/r;
+    if(x<1e-14) return true;
+    const E=Math.sqrt(Math.max((g.rd*g.rd+x*(c2+g.L*g.L/(r*r)))/c2,1e-30));g.E=E;
+    const dtdtau=dil?E/x:1;
+    let hmax=0.02*Math.sqrt(r*r*r/GM);
+    if(dil)hmax=Math.min(hmax,0.3*(r-Rs)/C);
+    const h=Math.min(hmax,(dtSim-tAcc)/dtdtau),L=g.L;
+    const k1r=g.rd,k1v=acc(r,L);
+    const k2r=g.rd+0.5*h*k1v,k2v=acc(r+0.5*h*k1r,L);
+    const k3r=g.rd+0.5*h*k2v,k3v=acc(r+0.5*h*k2r,L);
+    const k4r=g.rd+h*k3v,k4v=acc(r+h*k3r,L);
+    g.r=r+h*(k1r+2*k2r+2*k3r+k4r)/6;g.rd+=h*(k1v+2*k2v+2*k3v+k4v)/6;
+    g.phi+=h*0.5*(L/(r*r)+L/(g.r*g.r));
+    g.L*=Math.exp(-0.002*(L/(r*r))*h); // arrastre de acreción muy débil (para que se vea la precesión): pierde momento angular
+    tAcc+=h*dtdtau;
+    if(g.r<=Rs) return true;
+    if(++it>3000)break;
+  }
+  o.x=g.r*Math.cos(g.phi);o.y=g.r*Math.sin(g.phi);
+  return false;
+}
+function physics(o,dtSim,b){
+  if(o.g)return geodesic(o,dtSim,b);
+  const r0=Math.hypot(o.x,o.y), tau=Math.sqrt(r0*r0*r0/b.GM);
+  const n=Math.min(2500,Math.max(1,Math.ceil(dtSim/(0.02*tau)))), h0=dtSim/n;
+  for(let i=0;i<n;i++){
+    let r=Math.hypot(o.x,o.y);
+    const f=fOf(r,b); if(f<FCUT) return true;
+    const h=h0*f; // ritmo del tiempo del objeto visto de lejos: dτ = f·dt, con f = √(1 − R_s/r)
+    let a=b.GM/(r*r*r);
+    o.vx-=a*o.x*h/2; o.vy-=a*o.y*h/2;
+    const vr=(o.vx*o.x+o.vy*o.y)/r, kr=(1-f)*vr/r; // la velocidad radial vista de lejos se frena otra vez por f: dr/dt = f²·dr/dτ
+    o.x+=(o.vx-kr*o.x)*h; o.y+=(o.vy-kr*o.y)*h;
+    r=Math.hypot(o.x,o.y); a=b.GM/(r*r*r);
+    o.vx-=a*o.x*h/2; o.vy-=a*o.y*h/2;
+    const d=Math.exp(-0.03*Math.hypot(o.vx,o.vy)/r*h); o.vx*=d; o.vy*=d;
+    if(r<=b.Rs) return true;
+  }
+  return false;
+}
+
+function drawShape(type,s,hue){
+  const c1=`hsl(${hue},90%,75%)`, c2=`hsl(${hue+40},90%,50%)`;
+  if(type==='humano'){
+    ctx.strokeStyle=c1;ctx.fillStyle=c1;ctx.lineWidth=s*0.32;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(-s*0.5,0);ctx.lineTo(s*0.5,0);ctx.stroke();
+    ctx.beginPath();ctx.arc(-s*0.9,0,s*0.38,0,7);ctx.fill();
+    ctx.lineWidth=s*0.18;
+    [[-1],[1]].forEach(([k])=>{
+      ctx.beginPath();ctx.moveTo(-s*0.25,0);ctx.lineTo(-s*0.05,k*s*0.55);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(s*0.5,0);ctx.lineTo(s*0.85,k*s*0.5);ctx.stroke();
+    });
+  }else if(type==='vehiculo'){
+    ctx.fillStyle=c1;ctx.beginPath();
+    if(ctx.roundRect)ctx.roundRect(-s*1.1,-s*0.45,s*2.2,s*0.9,s*0.25);else ctx.rect(-s*1.1,-s*0.45,s*2.2,s*0.9);
+    ctx.fill();
+    ctx.fillStyle=c2;ctx.beginPath();ctx.moveTo(-s*0.35,-s*0.45);ctx.lineTo(s*0.15,-s*0.45);ctx.lineTo(0,-s*0.95);ctx.lineTo(-s*0.15,-s*0.95);ctx.closePath();ctx.fill();
+    ctx.fillStyle='#111';
+    ctx.beginPath();ctx.arc(-s*0.65,s*0.45,s*0.28,0,7);ctx.fill();
+    ctx.beginPath();ctx.arc(s*0.65,s*0.45,s*0.28,0,7);ctx.fill();
+  }else if(type==='mercurio'||type==='asteroide'){
+    const g=ctx.createRadialGradient(-s*0.25,-s*0.25,s*0.1,0,0,s);
+    g.addColorStop(0,type==='mercurio'?'#b9b3a8':'#9a8f80');g.addColorStop(1,type==='mercurio'?'#6b665e':'#54493c');
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,s,0,7);ctx.fill();
+    ctx.fillStyle='rgba(0,0,0,0.22)';
+    [[-0.3,-0.2,0.14],[0.25,0.15,0.12],[0.05,-0.4,0.09],[-0.1,0.35,0.08]].forEach(([x,y,r])=>{ctx.beginPath();ctx.arc(x*s*1.4,y*s*1.4,r*s*1.4,0,7);ctx.fill()});
+  }else if(type==='tierra'){
+    const g=ctx.createRadialGradient(-s*0.3,-s*0.3,s*0.15,0,0,s);
+    g.addColorStop(0,'#4fa8e0');g.addColorStop(1,'#1a4d8f');
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,s,0,7);ctx.fill();
+    ctx.save();ctx.beginPath();ctx.arc(0,0,s,0,7);ctx.clip();ctx.fillStyle='rgba(60,160,80,0.85)';
+    [[-0.35,-0.3,0.42],[0.3,0.15,0.36],[-0.1,0.5,0.3],[0.45,-0.45,0.25]].forEach(([x,y,r])=>{ctx.beginPath();ctx.ellipse(x*s,y*s,r*s,r*s*0.65,0.5,0,7);ctx.fill()});
+    ctx.restore();
+  }else{ // júpiter
+    ctx.save();ctx.beginPath();ctx.arc(0,0,s,0,7);ctx.clip();
+    const bc=['#d9b48f','#c99a6b','#e8cba8','#b8875c','#eed9bb','#c2895a','#dcbd99'], bh=(s*2)/bc.length;
+    bc.forEach((c,i)=>{ctx.fillStyle=c;ctx.fillRect(-s,-s+i*bh,s*2,bh+1)});
+    ctx.fillStyle='rgba(180,90,60,0.55)';ctx.beginPath();ctx.ellipse(s*0.25,s*0.05,s*0.22,s*0.13,0,0,7);ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawBH(b){
+  const x=PX(0),y=PY(0),px=b.Rs/mpp;
+  const halo=Math.max(px*3.2,8);
+  const g=ctx.createRadialGradient(x,y,Math.max(px*0.9,1),x,y,halo);
+  g.addColorStop(0,'rgba(236,72,153,0.4)');g.addColorStop(0.4,'rgba(139,92,246,0.15)');g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,halo,0,7);ctx.fill();
+  ctx.fillStyle='#000';ctx.beginPath();ctx.arc(x,y,Math.max(px,1.5),0,7);ctx.fill();
+  if(showRings){ // fotosfera (1,5 R_s), sombra aparente (3√3/2 R_s ≈ 2,6 R_s) e ISCO (3 R_s, en el plano orbital)
+    ctx.save();ctx.lineWidth=1;ctx.setLineDash([2,4]);ctx.font='11px sans-serif';ctx.textAlign='right';
+    [[1.5,'Fotosfera 1,5 R_s','#fbbf24',0],[2.598,'Sombra 2,6 R_s','#a3e635',0],[3,'ISCO 3 R_s','#f472b6',1]].forEach(([k,lab,col,pl],i)=>{
+      const rr=k*px;if(rr<8)return;
+      ctx.strokeStyle=col;ctx.fillStyle=col;ctx.beginPath();
+      if(pl)ctx.ellipse(x,y,rr,rr*cinc,0,0,7);else ctx.arc(x,y,rr,0,7);
+      ctx.stroke();
+      if(rr>30)ctx.fillText(lab,x-rr-5,y+4+(i-1)*13);
+    });
+    ctx.restore();
+  }
+  if(showHor){ // marcador del horizonte de sucesos (se amplía si a este zoom es menor que 9 px)
+    const rr=Math.max(px,9),ox=x+rr*0.707,oy=y-rr*0.707;
+    ctx.save();ctx.strokeStyle='#22d3ee';ctx.fillStyle='#22d3ee';ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
+    ctx.beginPath();ctx.arc(x,y,rr,0,7);ctx.stroke();ctx.setLineDash([]);
+    ctx.beginPath();ctx.moveTo(ox,oy);ctx.lineTo(ox+22,oy-22);ctx.stroke();
+    ctx.font='12px sans-serif';ctx.textAlign='left';
+    ctx.fillText('Horizonte de sucesos · R_s = '+fmt(b.Rs)+(px<9?'  (círculo ampliado; real: '+px.toFixed(2)+' px)':''),ox+26,oy-24);
+    ctx.restore();
+  }
+}
+
+// ---- disco de acreción: 1500 partículas en órbitas circulares (Ω de Paczyński–Wiita) con inflow lento y caída bajo el ISCO ----
+const DISK=[];for(let i=0;i<1500;i++)DISK.push({r:3+Math.pow(Math.random(),1.3)*11,a:Math.random()*6.2832});
+function updateDisk(b,dt){
+  const rs=b.Rs,om=r=>Math.sqrt(b.GM/(r*Math.pow(Math.max(r-rs,0.05*rs),2)));
+  const s=Math.min(1,0.12/Math.max(om(3*rs)*dt,1e-12)); // evita el estroboscopio: limita el giro por fotograma conservando la rotación diferencial
+  for(const q of DISK){
+    const da=om(q.r*rs)*dt*s;
+    q.a+=da;
+    q.r-=(q.r>3?0.35*(q.r/10):1.2)*da;
+    if(q.r<1.3){q.r=11+Math.random()*3;q.a=Math.random()*6.2832}
+  }
+}
+function dcol(t){ // temperatura: blanco-azulado (interior) → naranja → rojo (exterior)
+  t=Math.min(1,Math.max(0,t));
+  const A=t<0.4?[210,230,255]:[255,205,120],B=t<0.4?[255,205,120]:[210,80,45],u=t<0.4?t/0.4:(t-0.4)/0.6;
+  return `rgb(${A[0]+(B[0]-A[0])*u|0},${A[1]+(B[1]-A[1])*u|0},${A[2]+(B[2]-A[2])*u|0})`;
+}
+function drawDisk(b,mode){
+  if(14*b.Rs/mpp<2)return;
+  for(const q of DISK){
+    const sn=Math.sin(q.a);
+    if((mode==='far'&&!(sn<0))||(mode==='near'&&sn<0))continue;
+    const X=PX(q.r*b.Rs*Math.cos(q.a)),Y=PY(q.r*b.Rs*sn);
+    ctx.globalAlpha=q.r>3?0.7:0.7*Math.max(0,(q.r-1.3)/1.7);
+    ctx.fillStyle=dcol((q.r-3)/11);ctx.fillRect(X-0.8,Y-0.8,1.6,1.6);
+  }
+  ctx.globalAlpha=1;
+}
+
+// ---- lente gravitacional: imágenes primaria y secundaria de cada estrella (lente puntual), sin imágenes dentro de la sombra ----
+const STARS=[];for(let i=0;i<900;i++)STARS.push({u:Math.random(),v:Math.random(),s:0.5+Math.random()*1.1,h:Math.random()});
+function drawStars(b){
+  const W=cv.width,H=cv.height,cx=PX(0),cy=PY(0),tE=einR*b.Rs/mpp,sh=2.598*b.Rs/mpp;
+  ctx.fillStyle='#dfe6ff';
+  for(const st of STARS){
+    const sx=st.u*W,sy=st.v*H,bx=sx-cx,by=sy-cy,be=Math.hypot(bx,by),base=0.25+0.55*st.h;
+    if(tE<0.5||be<1e-3){ctx.globalAlpha=base;ctx.fillRect(sx,sy,st.s,st.s);continue}
+    const ux=bx/be,uy=by/be,rt=Math.sqrt(be*be+4*tE*tE),uu=be/tE,A=(uu*uu+2)/(2*uu*Math.sqrt(uu*uu+4));
+    for(const [th,mu] of [[(be+rt)/2,0.5+A],[(be-rt)/2,Math.abs(A-0.5)]]){
+      if(Math.abs(th)<sh)continue;
+      const k=Math.sqrt(mu),sz=st.s*Math.min(2.4,k);
+      ctx.globalAlpha=Math.min(1,base*k);ctx.fillRect(cx+ux*th-sz/2,cy+uy*th-sz/2,sz,sz);
+    }
+  }
+  ctx.globalAlpha=1;
+}
+
+function drawScale(){
+  const W=cv.width,H=cv.height, target=110*mpp, p=Math.pow(10,Math.floor(Math.log10(target)));
+  const nice=[5,2,1].map(k=>k*p).find(v=>v<=target)||p, px=nice/mpp;
+  const x0=W-24-px, y0=H-28-(parseFloat(getComputedStyle(document.body).paddingBottom)||0);
+  ctx.strokeStyle='#aab';ctx.fillStyle='#aab';ctx.lineWidth=2;ctx.font='12px sans-serif';ctx.textAlign='center';
+  ctx.beginPath();ctx.moveTo(x0,y0-5);ctx.lineTo(x0,y0);ctx.lineTo(x0+px,y0);ctx.lineTo(x0+px,y0-5);ctx.stroke();
+  ctx.fillText(fmt(nice),x0+px/2,y0-9);
+}
+
+function drawPlanet(o,T,b){
+  const W=cv.width,H=cv.height,rr=Math.max(T.s/Math.sqrt(o.N0)*1.15/mpp,0.7);
+  for(const p of o.parts){
+    const x=PX(p.x),y=PY(p.y);
+    if(x<-rr||y<-rr||x>W+rr||y>H+rr)continue;
+    ctx.fillStyle=p.col;ctx.beginPath();ctx.arc(x,y,rr,0,7);ctx.fill();
+  }
+  if(o.span/mpp<6){
+    const x=PX(o.cx),y=PY(o.cy);
+    ctx.strokeStyle='hsl(200,90%,70%)';ctx.fillStyle='#dde';ctx.lineWidth=1.5;ctx.font='11px sans-serif';ctx.textAlign='left';
+    ctx.beginPath();ctx.arc(x,y,9,0,7);ctx.stroke();ctx.fillText(`${T.name} · ${fmt(o.span)}`,x+13,y+4);
+  }
+}
+function drawObjects(b,mode){
+  for(const o of objects){
+    const wy=o.planet?o.cy:o.y;
+    if(mode!=='all'&&(mode==='far')!==(wy<0))continue;
+    if(o.planet){drawPlanet(o,TYPES[o.type],b);continue}
+    const T=TYPES[o.type],sPx=T.s/mpp,ext=T.len*o.stretch/mpp,px=PX(o.x),py=PY(o.y);
+    ctx.save();
+    if(o.g&&o.trail.length>2){ // estela larga: se ve la precesión de la órbita
+      ctx.strokeStyle=`hsl(${o.hue},90%,65%)`;ctx.lineWidth=1.2;ctx.globalAlpha=0.5;ctx.beginPath();
+      o.trail.forEach((t,i)=>{const X=PX(t.x),Y=PY(t.y);i?ctx.lineTo(X,Y):ctx.moveTo(X,Y)});ctx.stroke();
+    }else o.trail.forEach((t,i)=>{
+      ctx.globalAlpha=(i/o.trail.length)*0.4;ctx.fillStyle=`hsl(${o.hue},90%,65%)`;
+      ctx.beginPath();ctx.arc(PX(t.x),PY(t.y),1.6,0,7);ctx.fill();
+    });
+    ctx.restore();
+    if(sPx<3e4){
+      ctx.save();ctx.translate(px,py);ctx.scale(1,cinc);ctx.rotate(Math.atan2(-o.y,-o.x));
+      ctx.scale(o.stretch,1/Math.sqrt(o.stretch));drawShape(o.type,sPx,o.hue);ctx.restore();
+    }
+    if(ext<6){
+      ctx.strokeStyle=`hsl(${o.hue},90%,70%)`;ctx.fillStyle='#dde';ctx.lineWidth=1.5;ctx.font='11px sans-serif';ctx.textAlign='left';
+      ctx.beginPath();ctx.arc(px,py,9,0,7);ctx.stroke();
+      ctx.fillText(`${T.name} · ${fmt(T.len*o.stretch)}`,px+13,py+4);
+    }
+  }
+}
+let slowed=false;
+let last=performance.now();
+function frame(now){
+  const dt=Math.min((now-last)/1000,0.05); last=now;
+  const b=BH();
+  let lim=Infinity;
+  for(const o of objects){
+    if(o.planet)lim=Math.min(lim,60*0.04*o.tauS);
+    else{const r=Math.hypot(o.x,o.y);lim=Math.min(lim,400*0.02*Math.sqrt(r*r*r/b.GM))}
+  }
+  const want=dt*timeScale,dtSim=Math.min(want,lim);slowed=dtSim<want;
+  if(showDisk)updateDisk(b,dtSim);
+  for(const o of objects){
+    if(o.dead)continue;
+    if(o.planet){
+      stepPlanet(o,dtSim,b);
+      const P=o.parts;if(!P.length){o.dead=true;continue}
+      let cx=0,cy=0;for(const p of P){cx+=p.x;cy+=p.y}
+      cx/=P.length;cy/=P.length;o.cx=cx;o.cy=cy;o.r=Math.hypot(cx,cy);
+      const ux=cx/o.r,uy=cy/o.r;let mn=1e300,mx=-1e300;
+      let rm=1e300;for(const p of P){const q=p.x*ux+p.y*uy;if(q<mn)mn=q;if(q>mx)mx=q;const rr=Math.hypot(p.x,p.y);if(rr<rm)rm=rr}o.f=fOf(rm,b);
+      o.span=mx-mn+2*o.rp;o.tidal=2*b.GM*TYPES[o.type].len/(o.r**3);
+      continue;
+    }
+    if(physics(o,dtSim,b)){o.dead=true;continue}
+    const T=TYPES[o.type];o.r=Math.hypot(o.x,o.y);o.cx=o.x;o.cy=o.y;o.f=fOf(o.r,b);
+    o.tidal=2*b.GM*T.len/(o.r**3);
+    o.stretch=Math.min(25,1+3*Math.log10(1+o.tidal/T.a));
+    o.trail.push({x:o.x,y:o.y});if(o.trail.length>(o.g?400:24))o.trail.shift();
+  }
+  objects=objects.filter(o=>!o.dead);
+  const tr=objects[objects.length-1];
+  if(follow&&tr){cam.x=tr.cx;cam.y=tr.cy}else{cam.x=0;cam.y=0}
+
+  const W=cv.width,H=cv.height;
+  ctx.clearRect(0,0,W,H);
+  if(showLens)drawStars(b);
+  if(incl>3){ // vista inclinada: lo que está detrás del agujero negro se dibuja antes, lo que está delante después
+    if(showDisk)drawDisk(b,'far');
+    drawObjects(b,'far');
+    drawBH(b);
+    if(showDisk)drawDisk(b,'near');
+    drawObjects(b,'near');
+  }else{
+    if(showDisk)drawDisk(b,'all');
+    drawBH(b);
+    drawObjects(b,'all');
+  }
+  drawScale();
+
+  let st=`Objetos activos: <b>${objects.length}</b>`;
+  if(tr){
+    const T=TYPES[tr.type];
+    st+=`<br>${T.name}: distancia <b>${(tr.r/b.Rs).toFixed(1)} R<sub>s</sub></b> (${fmt(tr.r)})`;
+    if(tr.planet){
+      const rt=2.44*T.s*Math.cbrt(b.M*MSUN/T.m);
+      st+=`<br>Masa <b>${(T.m/MSUN).toExponential(1)} M☉</b> · límite de Roche ≈ <b>${rt/b.Rs<100?(rt/b.Rs).toPrecision(2):(rt/b.Rs).toFixed(0)} R<sub>s</sub></b>${rt<b.Rs?' → cae entero':''}`+
+          `<br>Longitud <b>${fmt(tr.span)}</b> (×${(tr.span/T.len).toFixed(1)}) <br>Restante <b>${(100*tr.parts.length/tr.N0).toFixed(0)}%</b> · consumido <b>${(100*tr.eaten/tr.N0).toFixed(0)}%</b> · expulsado <b>${(100*tr.lost/tr.N0).toFixed(0)}%</b>`;
+    }else{
+      st+=`<br>Marea: <b>${fnum(tr.tidal/9.81)} g</b> · longitud <b>${fmt(T.len*tr.stretch)}</b> (×${tr.stretch.toFixed(1)})`;
+      if(tr.g){const Li=2*Math.sqrt(3)*b.GM/C;
+        st+=`<br>Geodésica: L = <b>${(tr.g.L/Li).toFixed(2)}</b>·L<sub>ISCO</sub> · E = <b>${tr.g.E.toFixed(3)}</b> mc²${tr.g.L<Li?' · sin órbita circular estable':''}`}
+    }
+  }
+  if(tr&&dil)st+=`<br>Cámara lenta automática: reloj ×<b>${tr.f.toFixed(3)}</b> · caída radial ×<b>${(tr.f*tr.f).toFixed(3)}</b>`;
+  if(slowed)st+='<br>⏱ tiempo auto-ralentizado (acción rápida)';
+  $('stat').innerHTML=st;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
